@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TYK2 Engineering Calc</title>
+
+<!-- Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<!-- MathLive (textbook math input + static render) + Compute Engine (evaluation) -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/mathlive/dist/mathlive-static.css">
+<!-- Load MathLive + Compute Engine as ES modules and expose them as globals
+     (the plain UMD build no longer creates window.MathLive in current versions). -->
+<script type="module">
+  try{
+    const ML = await import('https://cdn.jsdelivr.net/npm/mathlive/+esm');
+    const CE = await import('https://cdn.jsdelivr.net/npm/@cortex-js/compute-engine/+esm');
+    window.MathLive = ML;
+    window.ComputeEngine = { ComputeEngine: CE.ComputeEngine };
+    if (ML.mathVirtualKeyboard) window.mathVirtualKeyboard = ML.mathVirtualKeyboard;
+    if (ML.MathfieldElement && !customElements.get('math-field')) {
+      try { customElements.define('math-field', ML.MathfieldElement); } catch(e){}
+    }
+    window.__mlReady = true;
+  }catch(err){
+    window.__mlError = err;
+    document.addEventListener('DOMContentLoaded', ()=>{
+      const t=document.getElementById('toast');
+      if(t){ t.textContent='โหลดไลบรารีไม่สำเร็จ — ต้องมีอินเทอร์เน็ต แล้วรีเฟรช'; t.classList.add('show'); }
+    });
+  }
+</script>
+
+<style>
+  :root{
+    --ink:#141b24;        /* chrome background (graphite navy) */
+    --ink-2:#1c2630;      /* panels */
+    --ink-3:#26333f;      /* raised controls */
+    --line:#33424f;       /* borders on dark */
+    --txt:#e9eef4;        /* primary text on dark */
+    --txt-dim:#90a2b3;    /* muted text on dark */
+    --paper:#f6f3ea;      /* worksheet paper */
+    --paper-ink:#26303a;  /* ink on paper */
+    --paper-dim:#7c8893;  /* faint ink on paper */
+    --grid:#d6e3ec;       /* blueprint grid line */
+    --margin:#c0563b;     /* red margin rule (calc pad) */
+    --brass:#c98a3f;      /* accent: active / results */
+    --brass-br:#e2ad63;   /* bright accent */
+    --brass-dim:#8a6a3c;
+    --danger:#d2604f;
+    --radius:10px;
+    --mono:"IBM Plex Mono",ui-monospace,monospace;
+    --disp:"Space Grotesk",system-ui,sans-serif;
+    --ui:"Inter",system-ui,sans-serif;
+  }
+
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    font-family:var(--ui);
+    background:var(--ink);
+    color:var(--txt);
+    -webkit-font-smoothing:antialiased;
+  }
+
+  /* ---------- App bar ---------- */
+  .appbar{
+    display:flex;align-items:center;gap:18px;flex-wrap:wrap;
+    padding:12px 18px;
+    background:linear-gradient(180deg,#1a232d,#141b24);
+    border-bottom:1px solid var(--line);
+    position:sticky;top:0;z-index:20;
+  }
+  .brand{display:flex;align-items:center;gap:11px;margin-right:auto}
+  .brand .mark{
+    width:30px;height:30px;border-radius:7px;flex:none;
+    background:
+      linear-gradient(135deg,var(--brass-br),var(--brass-dim));
+    display:grid;place-items:center;
+    font-family:var(--disp);font-weight:700;color:#1b130a;font-size:16px;
+    box-shadow:0 0 0 1px rgba(226,173,99,.25),0 4px 14px rgba(0,0,0,.3);
+  }
+  .brand h1{
+    font-family:var(--disp);font-size:16px;font-weight:600;margin:0;letter-spacing:.2px;
+    line-height:1.05;
+  }
+  .brand small{display:block;color:var(--txt-dim);font-size:11px;font-weight:500;letter-spacing:.06em;text-transform:uppercase}
+
+  .seg{display:inline-flex;background:var(--ink-2);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .seg button{
+    font-family:var(--mono);font-size:12.5px;font-weight:500;
+    color:var(--txt-dim);background:transparent;border:0;padding:7px 12px;cursor:pointer;
+  }
+  .seg button.on{background:var(--brass);color:#1b130a;font-weight:600}
+  .ctl-group{display:flex;align-items:center;gap:8px}
+  .ctl-group label{font-size:11px;color:var(--txt-dim);text-transform:uppercase;letter-spacing:.06em}
+  select.mini{
+    font-family:var(--mono);font-size:12.5px;background:var(--ink-2);color:var(--txt);
+    border:1px solid var(--line);border-radius:8px;padding:6px 8px;cursor:pointer;
+  }
+  .bar-actions{display:flex;gap:8px;flex-wrap:wrap}
+  .btn{
+    font-family:var(--ui);font-size:12.5px;font-weight:600;cursor:pointer;
+    border:1px solid var(--line);background:var(--ink-3);color:var(--txt);
+    border-radius:8px;padding:7px 12px;display:inline-flex;align-items:center;gap:6px;
+    transition:border-color .15s,background .15s;
+  }
+  .btn:hover{border-color:var(--brass-dim)}
+  .btn.primary{background:var(--brass);color:#1b130a;border-color:var(--brass)}
+  .btn.primary:hover{background:var(--brass-br)}
+  .btn.ghost{background:transparent}
+
+  /* ---------- Layout ---------- */
+  .wrap{display:grid;grid-template-columns:1.45fr 1fr;gap:0;height:calc(100vh - 56px)}
+  @media (max-width:920px){
+    .wrap{grid-template-columns:1fr;height:auto}
+  }
+
+  /* ---------- Worksheet (the hero) ---------- */
+  .sheet-pane{overflow:auto;background:#0f161d;padding:22px}
+  .sheet{
+    background:var(--paper);color:var(--paper-ink);
+    border-radius:6px;min-height:100%;
+    box-shadow:0 1px 0 rgba(255,255,255,.04),0 18px 50px rgba(0,0,0,.45);
+    background-image:
+      linear-gradient(var(--grid) 1px,transparent 1px),
+      linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+    background-size:24px 24px;background-position:48px 0;
+    position:relative;
+    padding:26px 26px 26px 60px;
+  }
+  .sheet::before{ /* margin rule */
+    content:"";position:absolute;left:48px;top:0;bottom:0;width:2px;background:var(--margin);opacity:.5;
+  }
+  .sheet-head{
+    display:flex;justify-content:space-between;align-items:baseline;
+    border-bottom:1.5px solid var(--paper-ink);padding-bottom:10px;margin-bottom:16px;
+  }
+  .sheet-head .title{font-family:var(--disp);font-weight:600;font-size:15px}
+  .sheet-head .meta{font-family:var(--mono);font-size:11px;color:var(--paper-dim)}
+  .sheet-head .meta b{color:var(--paper-ink);font-weight:500}
+
+  .entry{
+    display:grid;grid-template-columns:30px 1fr;gap:0 12px;
+    padding:11px 0;border-bottom:1px dashed #cdd6cf;
+  }
+  .entry .idx{
+    font-family:var(--mono);font-size:12px;color:var(--margin);font-weight:600;
+    padding-top:3px;
+  }
+  .entry .body{min-width:0;overflow-x:auto}
+  .entry .lbl{
+    font-family:var(--ui);font-size:12.5px;font-weight:600;color:var(--brass-dim);
+    margin-bottom:4px;letter-spacing:.01em;
+  }
+  .entry .lbl .assign{color:var(--paper-dim);font-weight:500;font-family:var(--mono);font-size:11px}
+  .mathrow{display:flex;align-items:center;flex-wrap:wrap;gap:8px;line-height:1.4;margin:2px 0}
+  .mathrow .eq{color:var(--paper-dim);font-family:var(--mono);font-size:15px}
+  .mathrow .unit{font-family:var(--mono);font-size:13px;color:var(--paper-dim);margin-left:2px}
+  .mathrow.result{margin-top:2px}
+  .mathrow.result .ml-static{font-weight:600}
+  .mathrow.result .val{
+    background:rgba(201,138,63,.16);border:1px solid rgba(201,138,63,.4);
+    border-radius:6px;padding:2px 8px;
+  }
+  .entry .err{color:var(--danger);font-family:var(--mono);font-size:12.5px}
+  .entry .del{
+    grid-column:2;justify-self:end;background:none;border:0;color:var(--paper-dim);
+    font-size:11px;cursor:pointer;padding:2px 0;font-family:var(--ui);
+  }
+  .entry .del:hover{color:var(--danger)}
+  .entry:hover .del{text-decoration:underline}
+
+  .ml-static{font-size:18px}
+  .empty{
+    text-align:center;color:var(--paper-dim);padding:48px 16px;font-family:var(--ui);
+  }
+  .empty b{display:block;font-family:var(--disp);color:var(--paper-ink);font-size:15px;margin-bottom:6px}
+
+  /* ---------- Controls ---------- */
+  .controls{background:var(--ink-2);border-left:1px solid var(--line);display:flex;flex-direction:column;overflow:auto}
+  @media (max-width:920px){.controls{border-left:0;border-bottom:1px solid var(--line)}}
+
+  .input-zone{padding:16px;border-bottom:1px solid var(--line)}
+  .field-label{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--txt-dim);margin-bottom:7px;font-weight:600}
+  math-field{
+    width:100%;font-size:22px;background:#0f161d;color:var(--txt);
+    border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px;
+    --caret-color:var(--brass-br);--selection-background-color:rgba(201,138,63,.3);
+    --primary:var(--brass);
+  }
+  math-field:focus-within{border-color:var(--brass);outline:none}
+
+  .meta-row{display:grid;grid-template-columns:1fr 86px;gap:8px;margin-top:10px}
+  .meta-row.three{grid-template-columns:1fr 1fr}
+  .inp{
+    font-family:var(--ui);font-size:13px;background:#0f161d;color:var(--txt);
+    border:1px solid var(--line);border-radius:8px;padding:9px 11px;width:100%;
+  }
+  .inp::placeholder{color:#5d6f7e}
+  .inp:focus{outline:none;border-color:var(--brass-dim)}
+  .inp.mono{font-family:var(--mono)}
+
+  .compute-row{display:flex;gap:8px;margin-top:11px}
+  .compute-row .btn{flex:1;justify-content:center;font-size:14px;padding:10px}
+  .kbd-btn{flex:none !important}
+
+  /* tabs */
+  .tabs{display:flex;border-bottom:1px solid var(--line);padding:0 8px;gap:2px;background:var(--ink-2);position:sticky;top:0;z-index:5}
+  .tabs button{
+    font-family:var(--disp);font-size:12.5px;font-weight:500;color:var(--txt-dim);
+    background:none;border:0;border-bottom:2px solid transparent;padding:11px 12px;cursor:pointer;
+  }
+  .tabs button.on{color:var(--txt);border-bottom-color:var(--brass)}
+  .tab-body{padding:14px 16px;flex:1}
+
+  /* keypad */
+  .keypad{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}
+  .key{
+    font-family:var(--mono);font-size:14px;color:var(--txt);
+    background:var(--ink-3);border:1px solid var(--line);border-radius:8px;
+    padding:11px 4px;cursor:pointer;transition:background .12s,border-color .12s;
+  }
+  .key:hover{background:#2f3e4b;border-color:var(--brass-dim)}
+  .key.accent{color:var(--brass-br)}
+  .key.wide{grid-column:span 2}
+  .keypad-group-label{font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--txt-dim);margin:14px 0 7px;font-weight:600}
+  .keypad-group-label:first-child{margin-top:0}
+
+  /* variables */
+  .var-row{display:grid;grid-template-columns:1fr 1fr 70px 26px;gap:6px;margin-bottom:7px;align-items:center}
+  .var-row .x{background:none;border:0;color:var(--txt-dim);cursor:pointer;font-size:15px;padding:0}
+  .var-row .x:hover{color:var(--danger)}
+  .add-var{width:100%;margin-top:4px}
+  .hint{font-size:11.5px;color:var(--txt-dim);line-height:1.5;margin:2px 0 12px}
+  .hint code{font-family:var(--mono);background:var(--ink-3);padding:1px 5px;border-radius:4px;color:var(--brass-br)}
+
+  /* formula library */
+  .lib-item{
+    display:block;width:100%;text-align:left;cursor:pointer;
+    background:var(--ink-3);border:1px solid var(--line);border-radius:9px;
+    padding:11px 13px;margin-bottom:8px;transition:border-color .12s;
+  }
+  .lib-item:hover{border-color:var(--brass-dim)}
+  .lib-item .name{font-family:var(--disp);font-size:13px;font-weight:600;color:var(--txt);margin-bottom:5px}
+  .lib-item .preview{color:var(--txt-dim)}
+  .lib-item .preview .ml-static{font-size:15px}
+
+  .toast{
+    position:fixed;bottom:18px;left:50%;transform:translateX(-50%) translateY(20px);
+    background:var(--ink-3);border:1px solid var(--brass-dim);color:var(--txt);
+    padding:10px 18px;border-radius:10px;font-size:13px;opacity:0;pointer-events:none;
+    transition:opacity .2s,transform .2s;z-index:50;box-shadow:0 10px 30px rgba(0,0,0,.4);
+  }
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  /* ---------- Print ---------- */
+  .print-only{display:none}
+  @media print{
+    @page{margin:14mm}
+    body{background:#fff;color:#000}
+    .appbar,.controls,.entry .del,.sheet-pane{display:none !important}
+    .wrap{display:block;height:auto}
+    .sheet-pane{display:block !important;background:#fff;padding:0;overflow:visible}
+    .sheet{box-shadow:none;background:#fff;background-image:none;padding:0;border-radius:0}
+    .sheet::before{display:none}
+    .entry{break-inside:avoid;border-bottom:1px solid #ddd}
+    .mathrow.result .val{background:#f3ece0;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .print-only{display:block}
+  }
+</style>
+</head>
+<body>
+
+<div class="appbar">
+  <div class="brand">
+    <div class="mark">f<sub style="font-size:9px">x</sub></div>
+    <div>
+      <h1>Engineering Calc</h1>
+      <small>TYK2 · Calculation Sheet</small>
+    </div>
+  </div>
+
+  <div class="ctl-group">
+    <label>มุม</label>
+    <div class="seg" id="angSeg">
+      <button data-ang="deg" class="on">DEG</button>
+      <button data-ang="rad">RAD</button>
+    </div>
+  </div>
+
+  <div class="ctl-group">
+    <label>ทศนิยม</label>
+    <select class="mini" id="decimals">
+      <option value="2">2</option>
+      <option value="3">3</option>
+      <option value="4" selected>4</option>
+      <option value="6">6</option>
+      <option value="auto">auto</option>
+    </select>
+  </div>
+
+  <div class="bar-actions">
+    <button class="btn ghost" id="btnLoad">เปิดไฟล์</button>
+    <button class="btn ghost" id="btnSave">บันทึก</button>
+    <button class="btn ghost" id="btnClear">ล้าง</button>
+    <button class="btn primary" id="btnPdf">Export PDF</button>
+  </div>
+</div>
+
+<div class="wrap">
+  <!-- WORKSHEET -->
+  <div class="sheet-pane">
+    <div class="sheet" id="sheet">
+      <div class="sheet-head">
+        <div class="title" id="sheetTitle">ใบคำนวณวิศวกรรม</div>
+        <div class="meta">
+          <div class="print-only" style="margin-bottom:3px">TYK Filters Co., Ltd. (TYK2)</div>
+          วันที่ <b id="sheetDate"></b> · มุม <b id="sheetAng">DEG</b>
+        </div>
+      </div>
+      <div id="entries"></div>
+      <div class="print-only" style="margin-top:30px;font-family:var(--mono);font-size:12px;color:#000">
+        <div style="display:flex;gap:60px;margin-top:34px">
+          <div style="border-top:1px solid #000;padding-top:5px;min-width:170px">คำนวณโดย / Calculated</div>
+          <div style="border-top:1px solid #000;padding-top:5px;min-width:170px">ตรวจสอบโดย / Checked</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CONTROLS -->
+  <div class="controls">
+    <div class="input-zone">
+      <div class="field-label">นิพจน์ (Expression)</div>
+      <math-field id="mf"></math-field>
+
+      <div class="meta-row">
+        <input class="inp" id="inLabel" placeholder="ชื่อ/คำอธิบาย (เช่น ความเค้น σ)">
+        <input class="inp mono" id="inUnit" placeholder="หน่วย">
+      </div>
+      <div class="meta-row three" style="margin-top:8px">
+        <input class="inp mono" id="inAssign" placeholder="เก็บผลลัพธ์เป็นตัวแปร (เช่น sigma)">
+        <div class="hint" style="margin:0;align-self:center">ใช้ <code>ans</code> = ผลล่าสุด</div>
+      </div>
+
+      <div class="compute-row">
+        <button class="btn primary" id="btnCompute">คำนวณ &amp; เพิ่มลงใบ</button>
+        <button class="btn kbd-btn" id="btnKbd" title="แป้นพิมพ์คณิตศาสตร์">⌨</button>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <button data-tab="keys" class="on">ฟังก์ชัน</button>
+      <button data-tab="vars">ตัวแปร</button>
+      <button data-tab="lib">สูตรสำเร็จ</button>
+    </div>
+
+    <div class="tab-body">
+      <!-- KEYPAD -->
+      <div data-panel="keys">
+        <div class="keypad-group-label">พื้นฐาน</div>
+        <div class="keypad">
+          <button class="key" data-ins="7">7</button><button class="key" data-ins="8">8</button><button class="key" data-ins="9">9</button><button class="key accent" data-cmd="\frac{#?}{#?}">a/b</button>
+          <button class="key" data-ins="4">4</button><button class="key" data-ins="5">5</button><button class="key" data-ins="6">6</button><button class="key accent" data-cmd="\sqrt{#?}">√</button>
+          <button class="key" data-ins="1">1</button><button class="key" data-ins="2">2</button><button class="key" data-ins="3">3</button><button class="key accent" data-cmd="#@^{#?}">x^n</button>
+          <button class="key" data-ins="0">0</button><button class="key" data-ins=".">.</button><button class="key" data-ins="\pi">π</button><button class="key accent" data-cmd="\sqrt[#?]{#?}">ⁿ√</button>
+        </div>
+
+        <div class="keypad-group-label">ตัวดำเนินการ</div>
+        <div class="keypad">
+          <button class="key" data-ins="+">+</button><button class="key" data-ins="-">−</button><button class="key" data-ins="\times ">×</button><button class="key" data-ins="\div ">÷</button>
+          <button class="key" data-ins="(">(</button><button class="key" data-ins=")">)</button><button class="key" data-ins="\%">%</button><button class="key" data-ins="e">e</button>
+        </div>
+
+        <div class="keypad-group-label">ตรีโกณ / ลอการิทึม</div>
+        <div class="keypad">
+          <button class="key" data-cmd="\sin(#?)">sin</button><button class="key" data-cmd="\cos(#?)">cos</button><button class="key" data-cmd="\tan(#?)">tan</button><button class="key" data-cmd="\ln(#?)">ln</button>
+          <button class="key" data-cmd="\arcsin(#?)">sin⁻¹</button><button class="key" data-cmd="\arccos(#?)">cos⁻¹</button><button class="key" data-cmd="\arctan(#?)">tan⁻¹</button><button class="key" data-cmd="\log_{10}(#?)">log</button>
+        </div>
+
+        <div class="keypad-group-label">แคลคูลัส (numeric)</div>
+        <div class="keypad">
+          <button class="key wide" data-cmd="\frac{d}{dx}(#?)">d/dx ( )</button>
+          <button class="key wide" data-cmd="\int_{#?}^{#?}(#?)dx">∫ ab ( )dx</button>
+        </div>
+        <div class="hint" style="margin-top:12px">แตะตัวแปรในแท็บ “ตัวแปร” เพื่อกำหนดค่า แล้วใบคำนวณจะแสดง สูตร → แทนค่า → ผลลัพธ์ ให้อัตโนมัติ</div>
+      </div>
+
+      <!-- VARIABLES -->
+      <div data-panel="vars" style="display:none">
+        <div class="hint">กำหนดชื่อตัวแปร ค่า และหน่วย (หน่วยใช้แสดงผลเท่านั้น ไม่นำไปคำนวณ) ชื่อพิมพ์ได้ทั้งตัวเดียว เช่น <code>F</code> หรือหลายตัว เช่น <code>F_max</code></div>
+        <div id="varList"></div>
+        <button class="btn ghost add-var" id="btnAddVar">+ เพิ่มตัวแปร</button>
+      </div>
+
+      <!-- LIBRARY -->
+      <div data-panel="lib" style="display:none">
+        <div class="hint">แตะเพื่อใส่สูตรลงช่องนิพจน์ แล้วกรอกค่าตัวแปรในแท็บ “ตัวแปร”</div>
+        <div id="libList"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<input type="file" id="fileInput" accept=".json" style="display:none">
+
+<script>
+(function(){
+  "use strict";
+
+  // ---- wait for libs ----
+  function ready(){
+    return window.MathLive && window.MathLive.convertLatexToMarkup &&
+           window.ComputeEngine && window.customElements.get('math-field');
+  }
+  let _waited=0;
+  function boot(){
+    if(!ready()){
+      _waited+=80;
+      if(_waited>12000 || window.__mlError){
+        const t=document.getElementById('toast');
+        if(t){ t.textContent='โหลดไลบรารีไม่สำเร็จ — ตรวจสอบอินเทอร์เน็ตแล้วรีเฟรช (Ctrl+F5)'; t.classList.add('show'); }
+        return;
+      }
+      return setTimeout(boot,80);
+    }
+    init();
+  }
+  boot();
+
+  let ce, mf;
+  let angleMode = 'deg';
+  let decimals = '4';
+  let variables = [];            // {name, value, unit}
+  let entries = [];              // {id, label, assign, unit, latex}
+  let lastResult = null;
+  let nextId = 1;
+
+  const $ = s => document.querySelector(s);
+  const el = (t,c)=>{const e=document.createElement(t);if(c)e.className=c;return e;};
+
+  function toast(msg){
+    const t=$('#toast'); t.textContent=msg; t.classList.add('show');
+    clearTimeout(t._to); t._to=setTimeout(()=>t.classList.remove('show'),1900);
+  }
+
+  // ---------- number formatting ----------
+  function fmt(num){
+    if(typeof num!=='number'||!isFinite(num)) return String(num);
+    if(decimals==='auto'){
+      let s = parseFloat(num.toPrecision(12)).toString();
+      return s;
+    }
+    const d = parseInt(decimals,10);
+    if(Math.abs(num)!==0 && (Math.abs(num)>=1e7 || Math.abs(num)<1e-5)){
+      return num.toExponential(d);
+    }
+    let s = num.toFixed(d);
+    return s;
+  }
+
+  function numToLatex(num){
+    const s = fmt(num);
+    if(s.includes('e')){
+      const [m,ex]=s.split('e');
+      return `${m}\\times 10^{${parseInt(ex,10)}}`;
+    }
+    return s;
+  }
+
+  // ---------- compute engine helpers ----------
+  function setAngle(mode){
+    angleMode=mode;
+    try{ ce.angularUnit = mode; }catch(e){ /* older builds */ }
+    $('#sheetAng').textContent = mode.toUpperCase();
+    $$('#angSeg button').forEach(b=>b.classList.toggle('on', b.dataset.ang===mode));
+  }
+  const $$ = s => Array.from(document.querySelectorAll(s));
+
+  function buildSubs(){
+    const subs={};
+    variables.forEach(v=>{
+      if(v.name && v.value!=='' && v.value!=null && isFinite(parseFloat(v.value))){
+        subs[v.name]=parseFloat(v.value);
+      }
+    });
+    if(lastResult!=null && isFinite(lastResult)) subs['ans']=lastResult;
+    return subs;
+  }
+
+  function toNumber(boxed){
+    try{
+      const n = boxed.N();
+      let v = n.valueOf();
+      if(typeof v==='number') return v;
+      if(n.re!=null && isFinite(n.re)) return n.re;
+      v = Number(v);
+      return isFinite(v)?v:NaN;
+    }catch(e){ return NaN; }
+  }
+
+  // ---------- render a worksheet entry ----------
+  function renderEntries(){
+    const box = $('#entries'); box.innerHTML='';
+    if(!entries.length){
+      const e=el('div','empty');
+      e.innerHTML='<b>ยังไม่มีการคำนวณ</b>พิมพ์นิพจน์ทางขวา แล้วกด “คำนวณ &amp; เพิ่มลงใบ”';
+      box.appendChild(e); return;
+    }
+    entries.forEach((en,i)=>{
+      const row=el('div','entry');
+      const idx=el('div','idx'); idx.textContent=String(i+1).padStart(2,'0'); row.appendChild(idx);
+      const body=el('div','body');
+
+      if(en.label || en.assign){
+        const lbl=el('div','lbl');
+        lbl.textContent = en.label||'';
+        if(en.assign){
+          const a=el('span','assign'); a.textContent = (en.label?'  →  ':'')+en.assign+' ='; lbl.appendChild(a);
+        }
+        body.appendChild(lbl);
+      }
+
+      if(en.error){
+        const er=el('div','err'); er.textContent='⚠ '+en.error; body.appendChild(er);
+        row.appendChild(body); box.appendChild(row); return;
+      }
+
+      // formula row
+      const r1=el('div','mathrow');
+      r1.innerHTML = MathLive.convertLatexToMarkup(en.latex);
+      body.appendChild(r1);
+
+      // substituted row (only if different from formula)
+      if(en.subLatex && en.subLatex!==en.latex){
+        const r2=el('div','mathrow');
+        r2.innerHTML = '<span class="eq">=</span> '+MathLive.convertLatexToMarkup(en.subLatex);
+        body.appendChild(r2);
+      }
+
+      // result row
+      const r3=el('div','mathrow result');
+      const eq=el('span','eq'); eq.textContent='='; r3.appendChild(eq);
+      const val=el('span','val'); val.innerHTML=MathLive.convertLatexToMarkup(en.resultLatex); r3.appendChild(val);
+      if(en.unit){ const u=el('span','unit'); u.textContent=en.unit; r3.appendChild(u); }
+      body.appendChild(r3);
+
+      const del=el('button','del'); del.textContent='ลบ';
+      del.onclick=()=>{ entries=entries.filter(x=>x.id!==en.id); renderEntries(); };
+      body.appendChild(del);
+
+      row.appendChild(body);
+      box.appendChild(row);
+    });
+  }
+
+  // ---------- main compute ----------
+  function compute(){
+    const latex = mf.value.trim();
+    if(!latex){ toast('ยังไม่ได้พิมพ์นิพจน์'); return; }
+    const label=$('#inLabel').value.trim();
+    const unit=$('#inUnit').value.trim();
+    const assign=$('#inAssign').value.trim();
+
+    const entry={id:nextId++, label, unit, assign, latex};
+    try{
+      const expr = ce.parse(latex);
+      const subs = buildSubs();
+      let substituted = expr;
+      if(Object.keys(subs).length){
+        try{ substituted = expr.subs(subs); }catch(e){ substituted = expr; }
+      }
+      entry.subLatex = substituted.latex;
+
+      const num = toNumber(substituted);
+      if(!isFinite(num)) throw new Error('คำนวณค่าไม่ได้ — ตรวจสอบนิพจน์หรือค่าตัวแปรที่ยังไม่ได้กำหนด');
+
+      entry.resultLatex = numToLatex(num);
+      entry.numeric = num;
+      lastResult = num;
+
+      if(assign){
+        try{ ce.assign(assign, num); }catch(e){}
+        const existing = variables.find(v=>v.name===assign);
+        if(existing){ existing.value=String(num); existing.unit=unit||existing.unit; }
+        else { variables.push({name:assign, value:String(num), unit:unit||''}); renderVars(); }
+      }
+    }catch(err){
+      entry.error = err.message || 'นิพจน์ไม่ถูกต้อง';
+    }
+
+    entries.push(entry);
+    renderEntries();
+    // reset for next line
+    mf.value=''; $('#inLabel').value=''; $('#inUnit').value=''; $('#inAssign').value='';
+    mf.focus();
+    const pane=$('.sheet-pane'); pane.scrollTop=pane.scrollHeight;
+  }
+
+  // ---------- variables UI ----------
+  function renderVars(){
+    const list=$('#varList'); list.innerHTML='';
+    variables.forEach((v,i)=>{
+      const row=el('div','var-row');
+      const n=el('input','inp mono'); n.placeholder='ชื่อ'; n.value=v.name;
+      n.oninput=e=>{ v.name=e.target.value.trim(); };
+      const val=el('input','inp mono'); val.placeholder='ค่า'; val.value=v.value;
+      val.oninput=e=>{ v.value=e.target.value.trim(); };
+      const u=el('input','inp mono'); u.placeholder='หน่วย'; u.value=v.unit;
+      u.oninput=e=>{ v.unit=e.target.value.trim(); };
+      const x=el('button','x'); x.textContent='×';
+      x.onclick=()=>{ variables.splice(i,1); renderVars(); };
+      row.append(n,val,u,x); list.appendChild(row);
+    });
+  }
+  function addVar(name,value,unit){
+    variables.push({name:name||'',value:value!=null?String(value):'',unit:unit||''});
+    renderVars();
+  }
+
+  // ---------- formula library ----------
+  const LIB=[
+    {name:'ความเค้น (Stress)  σ = F / A', latex:'\\frac{F}{A}', vars:['F','A']},
+    {name:'กฎของโอห์ม  V = I·R', latex:'I\\times R', vars:['I','R']},
+    {name:'กำลังไฟฟ้า  P = V·I', latex:'V\\times I', vars:['V','I']},
+    {name:'OEE = A × P × Q', latex:'A\\times P\\times Q', vars:['A','P','Q']},
+    {name:'อัตราของเสีย (ppm)', latex:'\\frac{n_{def}}{n_{total}}\\times 10^{6}', vars:['n_{def}','n_{total}']},
+    {name:'รอบการผลิต  Cycle = T / Q', latex:'\\frac{T}{Q}', vars:['T','Q']},
+    {name:'พลังงานจลน์  ½mv²', latex:'\\frac{1}{2}m v^{2}', vars:['m','v']},
+    {name:'พื้นที่วงกลม  πr²', latex:'\\pi r^{2}', vars:['r']},
+    {name:'ทฤษฎีพีทาโกรัส  √(a²+b²)', latex:'\\sqrt{a^{2}+b^{2}}', vars:['a','b']},
+  ];
+  function renderLib(){
+    const list=$('#libList'); list.innerHTML='';
+    LIB.forEach(item=>{
+      const b=el('button','lib-item');
+      const nm=el('div','name'); nm.textContent=item.name;
+      const pv=el('div','preview'); pv.innerHTML=MathLive.convertLatexToMarkup(item.latex);
+      b.append(nm,pv);
+      b.onclick=()=>{
+        mf.value=item.latex;
+        item.vars.forEach(vn=>{ if(!variables.find(v=>v.name===vn)) addVar(vn,'',''); });
+        switchTab('vars');
+        mf.focus();
+      };
+      list.appendChild(b);
+    });
+  }
+
+  // ---------- tabs ----------
+  function switchTab(name){
+    $$('.tabs button').forEach(b=>b.classList.toggle('on', b.dataset.tab===name));
+    $$('[data-panel]').forEach(p=>p.style.display = p.dataset.panel===name?'':'none');
+  }
+
+  // ---------- save / load ----------
+  function save(){
+    const data={app:'tyk2-eng-calc',version:1,date:new Date().toISOString(),
+      angleMode,decimals,variables,entries,nextId,
+      title:$('#sheetTitle').textContent};
+    const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+    const a=el('a'); a.href=URL.createObjectURL(blob);
+    a.download='engineering-calc-'+new Date().toISOString().slice(0,10)+'.json';
+    a.click(); URL.revokeObjectURL(a.href);
+    toast('บันทึกไฟล์แล้ว');
+  }
+  function load(file){
+    const rd=new FileReader();
+    rd.onload=()=>{
+      try{
+        const d=JSON.parse(rd.result);
+        variables=d.variables||[]; entries=d.entries||[];
+        nextId=d.nextId||(entries.length+1);
+        decimals=d.decimals||'4'; $('#decimals').value=decimals;
+        setAngle(d.angleMode||'deg');
+        if(d.title) $('#sheetTitle').textContent=d.title;
+        // re-assign variables into compute engine
+        variables.forEach(v=>{ if(v.name&&isFinite(parseFloat(v.value))){ try{ce.assign(v.name,parseFloat(v.value));}catch(e){} } });
+        renderVars(); renderEntries();
+        toast('เปิดไฟล์แล้ว');
+      }catch(e){ toast('ไฟล์ไม่ถูกต้อง'); }
+    };
+    rd.readAsText(file);
+  }
+
+  // ---------- init ----------
+  function init(){
+    ce = new ComputeEngine.ComputeEngine();
+    mf = $('#mf');
+    mf.mathVirtualKeyboardPolicy='manual';
+    mf.smartMode=true;
+    setAngle('deg');
+
+    $('#sheetDate').textContent = new Date().toLocaleDateString('th-TH',{year:'numeric',month:'short',day:'numeric'});
+
+    // keypad
+    const PLACEHOLDER='\\placeholder{}';
+    $$('.key').forEach(k=>{
+      // mousedown preventDefault keeps the field focused WITHOUT suppressing the click
+      k.addEventListener('mousedown', e=>e.preventDefault());
+      k.addEventListener('click',()=>{
+        const code = k.dataset.cmd || k.dataset.ins;
+        if(!code) return;
+        mf.focus();
+        const before = mf.value;
+        try{ mf.executeCommand(['insert', code]); }catch(e){}
+        // Fallback: if the command did not change the field, append a value-safe version.
+        if(mf.value===before){
+          const safe = code.replace(/#@/g, PLACEHOLDER)
+                           .replace(/#0/g, PLACEHOLDER)
+                           .replace(/#\?/g, PLACEHOLDER);
+          mf.value = before + safe;
+        }
+        mf.focus();
+      });
+    });
+
+    // angle seg
+    $$('#angSeg button').forEach(b=> b.onclick=()=>setAngle(b.dataset.ang));
+    $('#decimals').onchange=e=>{ decimals=e.target.value; renderEntries(); };
+
+    // tabs
+    $$('.tabs button').forEach(b=> b.onclick=()=>switchTab(b.dataset.tab));
+
+    // actions
+    $('#btnCompute').onclick=compute;
+    $('#btnKbd').onclick=()=>{ try{ window.mathVirtualKeyboard && window.mathVirtualKeyboard.show(); }catch(e){} };
+    $('#btnAddVar').onclick=()=>addVar('','','');
+    $('#btnPdf').onclick=()=>window.print();
+    $('#btnSave').onclick=save;
+    $('#btnClear').onclick=()=>{ if(confirm('ล้างใบคำนวณทั้งหมด?')){ entries=[]; renderEntries(); } };
+    $('#btnLoad').onclick=()=>$('#fileInput').click();
+    $('#fileInput').onchange=e=>{ if(e.target.files[0]) load(e.target.files[0]); e.target.value=''; };
+
+    // double-click sheet title to edit
+    $('#sheetTitle').addEventListener('dblclick',function(){
+      const t=prompt('ชื่อใบคำนวณ:',this.textContent); if(t) this.textContent=t;
+    });
+
+    // enter to compute
+    mf.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); compute(); } });
+
+    // seed a couple of variables for quick start
+    addVar('F','','N'); addVar('A','','mm^2');
+    renderLib(); renderEntries();
+    mf.focus();
+  }
+})();
+</script>
+</body>
+</html>
